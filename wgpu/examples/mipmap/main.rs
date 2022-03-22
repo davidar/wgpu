@@ -6,7 +6,7 @@ use std::{borrow::Cow, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const MIP_LEVEL_COUNT: u32 = 6;
+const MIP_LEVEL_COUNT: u32 = 7;
 const MIP_PASS_COUNT: u32 = MIP_LEVEL_COUNT - 1;
 
 fn create_texels(size: usize, cx: f32, cy: f32) -> Vec<u8> {
@@ -46,8 +46,8 @@ struct TimestampData {
     end: u64,
 }
 
-type TimestampQueries = [TimestampData; MIP_PASS_COUNT as usize];
-type PipelineStatisticsQueries = [u64; MIP_PASS_COUNT as usize];
+type TimestampQueries = [TimestampData; 1 as usize];
+type PipelineStatisticsQueries = [u64; 1 as usize];
 
 fn pipeline_statistics_offset() -> wgpu::BufferAddress {
     (mem::size_of::<TimestampQueries>() as wgpu::BufferAddress)
@@ -131,14 +131,39 @@ impl Example {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&views[4]),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&views[5]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&views[6]),
+                },
             ],
             label: None,
         });
 
-        let mut rpass = encoder.begin_compute_pass(&Default::default());
-        rpass.set_pipeline(&pipeline);
-        rpass.set_bind_group(0, &bind_group, &[]);
-        rpass.dispatch(1, 1, 1);
+        {
+            let mut rpass = encoder.begin_compute_pass(&Default::default());
+            if let Some(ref query_sets) = query_sets {
+                rpass.write_timestamp(&query_sets.timestamp, 0);
+            }
+            rpass.set_pipeline(&pipeline);
+            rpass.set_bind_group(0, &bind_group, &[]);
+            rpass.dispatch(1 << (MIP_LEVEL_COUNT - 6), 1 << (MIP_LEVEL_COUNT - 6), 1);
+            if let Some(ref query_sets) = query_sets {
+                rpass.write_timestamp(&query_sets.timestamp, 1);
+            }
+        }
+
+        if let Some(ref query_sets) = query_sets {
+            encoder.resolve_query_set(
+                &query_sets.timestamp,
+                0..2,
+                &query_sets.data_buffer,
+                0,
+            );
+        }
     }
 }
 
@@ -148,7 +173,10 @@ impl framework::Example for Example {
     }
 
     fn required_limits() -> wgpu::Limits {
-        wgpu::Limits::downlevel_defaults()
+        wgpu::Limits {
+            max_storage_textures_per_shader_stage: MIP_PASS_COUNT,
+            ..wgpu::Limits::downlevel_defaults()
+        }
     }
 
     fn required_downlevel_capabilities() -> wgpu::DownlevelCapabilities {
@@ -368,10 +396,9 @@ impl framework::Example for Example {
                 let microseconds = nanoseconds / 1000.0;
                 // Print the data!
                 println!(
-                    "Generating mip level {} took {:.3} μs and called the fragment shader {} times",
-                    idx + 1,
+                    "Generating {} mip levels took {:.3} μs",
+                    MIP_PASS_COUNT,
                     microseconds,
-                    pipeline
                 );
             }
         }

@@ -7,12 +7,14 @@
 [[group(0), binding(2)]] var imgDst1: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(3)]] var imgDst2: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(4)]] var imgDst3: texture_storage_2d<rgba8unorm,write>;
-// [[group(0), binding(5)]] var imgDst4: texture_storage_2d<rgba8unormsrgb,write>;
-// [[group(0), binding(6)]] var imgDst5: texture_storage_2d<rgba8unormsrgb,write>;
+[[group(0), binding(5)]] var imgDst4: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(6)]] var imgDst5: texture_storage_2d<rgba8unorm,write>;
 // [[group(0), binding(7)]] var<storage,read_write> spdGlobalAtomic: SpdGlobalAtomicBuffer;
 
 var<workgroup> spdIntermediate: array<array<vec4<f32>, 16>, 16>;
 var<workgroup> spdCounter: u32;
+
+let mips = 6u;
 
 fn SpdLoadSourceImage(p: vec2<u32>, slice: u32) -> vec4<f32> {
     return textureLoad(imgSrc, vec2<i32>(p), 0);
@@ -27,12 +29,11 @@ fn SpdStore(p: vec2<u32>, value: vec4<f32>, mip: u32, slice: u32) {
         textureStore(imgDst2, vec2<i32>(p), value);
     } else if (mip == 3u) {
         textureStore(imgDst3, vec2<i32>(p), value);
+    } else if (mip == 4u) {
+        textureStore(imgDst4, vec2<i32>(p), value);
+    } else if (mip == 5u) {
+        textureStore(imgDst5, vec2<i32>(p), value);
     }
-    // else if (mip == 4u) {
-    //     textureStore(imgDst4, vec2<i32>(p), value);
-    // } else if (mip == 5u) {
-    //     textureStore(imgDst5, vec2<i32>(p), value);
-    // }
 }
 
 // fn SpdIncreaseAtomicCounter(slice: u32) {
@@ -389,5 +390,5 @@ fn main(
     [[builtin(workgroup_id)]] workgroup_id: vec3<u32>,
     [[builtin(local_invocation_index)]] local_invocation_index: u32
 ) {
-    SpdDownsample(workgroup_id.xy, local_invocation_index, 4u, workgroup_id.z);
+    SpdDownsample(workgroup_id.xy, local_invocation_index, mips, workgroup_id.z);
 }

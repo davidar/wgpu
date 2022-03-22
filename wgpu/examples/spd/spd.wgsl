@@ -1,6 +1,18 @@
-// struct SpdGlobalAtomicBuffer {
-//     counter: atomic<u32>;
-// };
+let SPD_LINEAR_SAMPLER = true;
+
+struct StorageBuffer {
+    data: array<vec4<f32>>;
+};
+
+struct SpdGlobalAtomicBuffer {
+    counter: atomic<u32>;
+};
+
+struct SpdConstants {
+    mips: u32;
+    numWorkGroups: u32;
+    invInputSize: vec2<f32>;
+};
 
 [[group(0), binding(0)]] var imgSrc: texture_2d<f32>;
 [[group(0), binding(1)]] var imgDst0: texture_storage_2d<rgba8unorm,write>;
@@ -10,18 +22,22 @@
 [[group(0), binding(5)]] var imgDst4: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(6)]] var imgDst5: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(7)]] var srcSampler: sampler;
-// [[group(0), binding(7)]] var<storage,read_write> spdGlobalAtomic: SpdGlobalAtomicBuffer;
+[[group(0), binding(8)]] var<storage, read_write> imgDst5Buffer: StorageBuffer;
+[[group(0), binding(9)]] var<storage, read_write> spdGlobalAtomic: SpdGlobalAtomicBuffer;
+[[group(0), binding(10)]] var<uniform> spdConstants: SpdConstants;
+[[group(0), binding(11)]] var imgDst6: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(12)]] var imgDst7: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(13)]] var imgDst8: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(14)]] var imgDst9: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(15)]] var imgDst10: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(16)]] var imgDst11: texture_storage_2d<rgba8unorm,write>;
 
 var<workgroup> spdIntermediate: array<array<vec4<f32>, 16>, 16>;
 var<workgroup> spdCounter: u32;
 
-let mips = 6u;
-let inputSize = 128.;
-let SPD_LINEAR_SAMPLER = true;
-
 fn SpdLoadSourceImage(p: vec2<u32>, slice: u32) -> vec4<f32> {
     if (SPD_LINEAR_SAMPLER) {
-        let textureCoord = (vec2<f32>(p) + 1.) / inputSize;
+        let textureCoord = vec2<f32>(p) * spdConstants.invInputSize + spdConstants.invInputSize;
         return textureSampleLevel(imgSrc, srcSampler, textureCoord, 0.);
     }
     return textureLoad(imgSrc, vec2<i32>(p), 0);
@@ -40,20 +56,38 @@ fn SpdStore(p: vec2<u32>, value: vec4<f32>, mip: u32, slice: u32) {
         textureStore(imgDst4, vec2<i32>(p), value);
     } else if (mip == 5u) {
         textureStore(imgDst5, vec2<i32>(p), value);
+        imgDst5Buffer.data[p.x + p.y * 64u] = value;
+    } else if (mip == 6u) {
+        textureStore(imgDst6, vec2<i32>(p), value);
+    } else if (mip == 7u) {
+        textureStore(imgDst7, vec2<i32>(p), value);
+    } else if (mip == 8u) {
+        textureStore(imgDst8, vec2<i32>(p), value);
+    } else if (mip == 9u) {
+        textureStore(imgDst9, vec2<i32>(p), value);
+    } else if (mip == 10u) {
+        //textureStore(imgDst10, vec2<i32>(p), value);
+    } else if (mip == 11u) {
+        //textureStore(imgDst11, vec2<i32>(p), value);
     }
 }
 
-// fn SpdIncreaseAtomicCounter(slice: u32) {
-//     spdCounter = atomicAdd(&spdGlobalAtomic.counter, 1u);
-// }
+fn SpdLoad(p: vec2<u32>, slice: u32) -> vec4<f32> {
+    // return textureLoad(imgDst5, vec2<i32>(p), 0);
+    return imgDst5Buffer.data[p.x + p.y * 64u];
+}
 
-// fn SpdGetAtomicCounter() -> u32 {
-//     return spdCounter;
-// }
+fn SpdIncreaseAtomicCounter(slice: u32) {
+    spdCounter = atomicAdd(&spdGlobalAtomic.counter, 1u);
+}
 
-// fn SpdResetAtomicCounter(slice: u32) {
-//     atomicStore(&spdGlobalAtomic.counter, 0u);
-// }
+fn SpdGetAtomicCounter() -> u32 {
+    return spdCounter;
+}
+
+fn SpdResetAtomicCounter(slice: u32) {
+    atomicStore(&spdGlobalAtomic.counter, 0u);
+}
 
 fn SpdLoadIntermediate(x: u32, y: u32) -> vec4<f32> {
     return spdIntermediate[x][y];
@@ -71,14 +105,14 @@ fn SpdWorkgroupShuffleBarrier() {
     workgroupBarrier();
 }
 
-// fn SpdExitWorkgroup(numWorkGroups: u32, localInvocationIndex: u32, slice: u32) -> bool
-// {
-//     if (localInvocationIndex == 0u) {
-//         SpdIncreaseAtomicCounter(slice);
-//     }
-//     SpdWorkgroupShuffleBarrier();
-//     return (SpdGetAtomicCounter() != (numWorkGroups - 1u));
-// }
+fn SpdExitWorkgroup(numWorkGroups: u32, localInvocationIndex: u32, slice: u32) -> bool
+{
+    if (localInvocationIndex == 0u) {
+        SpdIncreaseAtomicCounter(slice);
+    }
+    SpdWorkgroupShuffleBarrier();
+    return (SpdGetAtomicCounter() != (numWorkGroups - 1u));
+}
 
 fn SpdReduceIntermediate(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: vec2<u32>) -> vec4<f32> {
     let v0 = SpdLoadIntermediate(i0.x, i0.y);
@@ -88,24 +122,24 @@ fn SpdReduceIntermediate(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: vec2<u
     return SpdReduce4(v0, v1, v2, v3);
 }
 
-// fn SpdReduceLoad4_(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: vec2<u32>, slice: u32) -> vec4<f32>
-// {
-//     let v0 = SpdLoad(i0, slice);
-//     let v1 = SpdLoad(i1, slice);
-//     let v2 = SpdLoad(i2, slice);
-//     let v3 = SpdLoad(i3, slice);
-//     return SpdReduce4(v0, v1, v2, v3);
-// }
+fn SpdReduceLoad4_(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: vec2<u32>, slice: u32) -> vec4<f32>
+{
+    let v0 = SpdLoad(i0, slice);
+    let v1 = SpdLoad(i1, slice);
+    let v2 = SpdLoad(i2, slice);
+    let v3 = SpdLoad(i3, slice);
+    return SpdReduce4(v0, v1, v2, v3);
+}
 
-// fn SpdReduceLoad4(base: vec2<u32>, slice: u32) -> vec4<f32>
-// {
-//     return SpdReduceLoad4_(
-//         vec2<u32>(base + vec2<u32>(0u, 0u)),
-//         vec2<u32>(base + vec2<u32>(0u, 1u)),
-//         vec2<u32>(base + vec2<u32>(1u, 0u)),
-//         vec2<u32>(base + vec2<u32>(1u, 1u)),
-//         slice);
-// }
+fn SpdReduceLoad4(base: vec2<u32>, slice: u32) -> vec4<f32>
+{
+    return SpdReduceLoad4_(
+        vec2<u32>(base + vec2<u32>(0u, 0u)),
+        vec2<u32>(base + vec2<u32>(0u, 1u)),
+        vec2<u32>(base + vec2<u32>(1u, 0u)),
+        vec2<u32>(base + vec2<u32>(1u, 1u)),
+        slice);
+}
 
 fn SpdReduceLoadSourceImage4(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: vec2<u32>, slice: u32) -> vec4<f32>
 {
@@ -278,35 +312,35 @@ fn SpdDownsampleMip_5(workGroupID: vec2<u32>, localInvocationIndex: u32, mip: u3
     }
 }
 
-// fn SpdDownsampleMips_6_7(x: u32, y: u32, mips: u32, slice: u32)
-// {
-//     var tex = vec2<u32>(x * 4u + 0u, y * 4u + 0u);
-//     var pix = vec2<u32>(x * 2u + 0u, y * 2u + 0u);
-//     let v0 = SpdReduceLoad4(tex, slice);
-//     SpdStore(pix, v0, 6u, slice);
+fn SpdDownsampleMips_6_7(x: u32, y: u32, mips: u32, slice: u32)
+{
+    var tex = vec2<u32>(x * 4u + 0u, y * 4u + 0u);
+    var pix = vec2<u32>(x * 2u + 0u, y * 2u + 0u);
+    let v0 = SpdReduceLoad4(tex, slice);
+    SpdStore(pix, v0, 6u, slice);
 
-//     tex = vec2<u32>(x * 4u + 2u, y * 4u + 0u);
-//     pix = vec2<u32>(x * 2u + 1u, y * 2u + 0u);
-//     let v1 = SpdReduceLoad4(tex, slice);
-//     SpdStore(pix, v1, 6u, slice);
+    tex = vec2<u32>(x * 4u + 2u, y * 4u + 0u);
+    pix = vec2<u32>(x * 2u + 1u, y * 2u + 0u);
+    let v1 = SpdReduceLoad4(tex, slice);
+    SpdStore(pix, v1, 6u, slice);
 
-//     tex = vec2<u32>(x * 4u + 0u, y * 4u + 2u);
-//     pix = vec2<u32>(x * 2u + 0u, y * 2u + 1u);
-//     let v2 = SpdReduceLoad4(tex, slice);
-//     SpdStore(pix, v2, 6u, slice);
+    tex = vec2<u32>(x * 4u + 0u, y * 4u + 2u);
+    pix = vec2<u32>(x * 2u + 0u, y * 2u + 1u);
+    let v2 = SpdReduceLoad4(tex, slice);
+    SpdStore(pix, v2, 6u, slice);
 
-//     tex = vec2<u32>(x * 4u + 2u, y * 4u + 2u);
-//     pix = vec2<u32>(x * 2u + 1u, y * 2u + 1u);
-//     let v3 = SpdReduceLoad4(tex, slice);
-//     SpdStore(pix, v3, 6u, slice);
+    tex = vec2<u32>(x * 4u + 2u, y * 4u + 2u);
+    pix = vec2<u32>(x * 2u + 1u, y * 2u + 1u);
+    let v3 = SpdReduceLoad4(tex, slice);
+    SpdStore(pix, v3, 6u, slice);
 
-//     if (mips <= 7u) { return; }
-//     // no barrier needed, working on values only from the same thread
+    if (mips <= 7u) { return; }
+    // no barrier needed, working on values only from the same thread
 
-//     let v = SpdReduce4(v0, v1, v2, v3);
-//     SpdStore(vec2<u32>(x, y), v, 7u, slice);
-//     SpdStoreIntermediate(x, y, v);
-// }
+    let v = SpdReduce4(v0, v1, v2, v3);
+    SpdStore(vec2<u32>(x, y), v, 7u, slice);
+    SpdStoreIntermediate(x, y, v);
+}
 
 fn SpdDownsampleNextFour(x: u32, y: u32, workGroupID: vec2<u32>, localInvocationIndex: u32, baseMip: u32, mips: u32, slice: u32)
 {
@@ -374,6 +408,7 @@ fn SpdDownsample(
     workGroupID: vec2<u32>,
     localInvocationIndex: u32,
     mips: u32,
+    numWorkGroups: u32,
     slice: u32
 ) {
     let sub_xy = ARmpRed8x8(localInvocationIndex % 64u);
@@ -385,14 +420,14 @@ fn SpdDownsample(
 
     if (mips <= 6u) { return; }
 
-    // if (SpdExitWorkgroup(numWorkGroups, localInvocationIndex, slice)) { return; }
+    if (SpdExitWorkgroup(numWorkGroups, localInvocationIndex, slice)) { return; }
 
-    // SpdResetAtomicCounter(slice);
+    SpdResetAtomicCounter(slice);
 
-    // // After mip 6 there is only a single workgroup left that downsamples the remaining up to 64x64 texels.
-    // SpdDownsampleMips_6_7(x, y, mips, slice);
+    // After mip 6 there is only a single workgroup left that downsamples the remaining up to 64x64 texels.
+    SpdDownsampleMips_6_7(x, y, mips, slice);
 
-    // SpdDownsampleNextFour(x, y, vec2<u32>(0u,0u), localInvocationIndex, 8u, mips, slice);
+    SpdDownsampleNextFour(x, y, vec2<u32>(0u,0u), localInvocationIndex, 8u, mips, slice);
 }
 
 [[stage(compute), workgroup_size(256)]]
@@ -400,5 +435,5 @@ fn main(
     [[builtin(workgroup_id)]] workgroup_id: vec3<u32>,
     [[builtin(local_invocation_index)]] local_invocation_index: u32
 ) {
-    SpdDownsample(workgroup_id.xy, local_invocation_index, mips, workgroup_id.z);
+    SpdDownsample(workgroup_id.xy, local_invocation_index, spdConstants.mips, spdConstants.numWorkGroups, workgroup_id.z);
 }

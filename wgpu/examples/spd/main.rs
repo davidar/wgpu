@@ -6,7 +6,7 @@ use std::{borrow::Cow, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const MIP_LEVEL_COUNT: u32 = 7;
+const MIP_LEVEL_COUNT: u32 = 11;
 const MIP_PASS_COUNT: u32 = MIP_LEVEL_COUNT - 1;
 
 fn create_texels(size: usize, cx: f32, cy: f32) -> Vec<u8> {
@@ -119,6 +119,35 @@ impl Example {
             })
             .collect::<Vec<_>>();
 
+        let num_workgroups_per_dimension = 1 << (MIP_LEVEL_COUNT - 6);
+        let image_size = (1 << MIP_LEVEL_COUNT) as f32;
+        let inv_image_size = 1. / image_size;
+
+        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 4 * 4 * 64 * 64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+        let global_atomic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+
+        let constants = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::bytes_of(&[
+                MIP_PASS_COUNT,
+                num_workgroups_per_dimension * num_workgroups_per_dimension,
+                inv_image_size.to_bits(), inv_image_size.to_bits(),
+            ]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let start_time = std::time::Instant::now();
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
@@ -154,6 +183,42 @@ impl Example {
                     binding: 7,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: storage_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: global_atomic_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: constants.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(&views[7]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(&views[8]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(&views[9]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: wgpu::BindingResource::TextureView(&views[10]),
+                },
+                /*wgpu::BindGroupEntry {
+                    binding: 15,
+                    resource: wgpu::BindingResource::TextureView(&views[11]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 16,
+                    resource: wgpu::BindingResource::TextureView(&views[12]),
+                },*/
             ],
             label: None,
         });
@@ -165,11 +230,13 @@ impl Example {
             }
             rpass.set_pipeline(&pipeline);
             rpass.set_bind_group(0, &bind_group, &[]);
-            rpass.dispatch(1 << (MIP_LEVEL_COUNT - 6), 1 << (MIP_LEVEL_COUNT - 6), 1);
+            rpass.dispatch(num_workgroups_per_dimension, num_workgroups_per_dimension, 1);
             if let Some(ref query_sets) = query_sets {
                 rpass.write_timestamp(&query_sets.timestamp, 1);
             }
         }
+
+        println!("Total time: {:.3} ms", start_time.elapsed().as_micros() as f32 / 1e3);
 
         if let Some(ref query_sets) = query_sets {
             encoder.resolve_query_set(
@@ -399,7 +466,7 @@ impl framework::Example for Example {
             let pipeline_stats_data: &PipelineStatisticsQueries =
                 bytemuck::from_bytes(&*pipeline_stats_view);
             // Iterate over the data
-            for (idx, (timestamp, pipeline)) in timestamp_data
+            for (_idx, (timestamp, _pipeline)) in timestamp_data
                 .iter()
                 .zip(pipeline_stats_data.iter())
                 .enumerate()

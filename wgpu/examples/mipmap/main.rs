@@ -6,7 +6,7 @@ use std::{borrow::Cow, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-const MIP_LEVEL_COUNT: u32 = 7;
+const MIP_LEVEL_COUNT: u32 = 11;
 const MIP_PASS_COUNT: u32 = MIP_LEVEL_COUNT - 1;
 
 fn create_texels(size: usize, cx: f32, cy: f32) -> Vec<u8> {
@@ -134,6 +134,8 @@ impl Example {
             })
             .collect::<Vec<_>>();
 
+        let start_time = std::time::Instant::now();
+
         for target_mip in 1..mip_count as usize {
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &bind_group_layout,
@@ -180,6 +182,8 @@ impl Example {
                 rpass.end_pipeline_statistics_query();
             }
         }
+
+        println!("Total time: {:.3} ms", start_time.elapsed().as_micros() as f32 / 1e3);
 
         if let Some(ref query_sets) = query_sets {
             let timestamp_query_count = MIP_PASS_COUNT * 2;

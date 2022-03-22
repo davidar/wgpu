@@ -67,6 +67,10 @@ name="skybox"
 test = true
 
 [[example]]
+name="spd"
+test = true
+
+[[example]]
 name="texture-arrays"
 required-features = ["spirv"]
 test = true

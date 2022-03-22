@@ -9,14 +9,21 @@
 [[group(0), binding(4)]] var imgDst3: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(5)]] var imgDst4: texture_storage_2d<rgba8unorm,write>;
 [[group(0), binding(6)]] var imgDst5: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(7)]] var srcSampler: sampler;
 // [[group(0), binding(7)]] var<storage,read_write> spdGlobalAtomic: SpdGlobalAtomicBuffer;
 
 var<workgroup> spdIntermediate: array<array<vec4<f32>, 16>, 16>;
 var<workgroup> spdCounter: u32;
 
 let mips = 6u;
+let inputSize = 128.;
+let SPD_LINEAR_SAMPLER = true;
 
 fn SpdLoadSourceImage(p: vec2<u32>, slice: u32) -> vec4<f32> {
+    if (SPD_LINEAR_SAMPLER) {
+        let textureCoord = (vec2<f32>(p) + 1.) / inputSize;
+        return textureSampleLevel(imgSrc, srcSampler, textureCoord, 0.);
+    }
     return textureLoad(imgSrc, vec2<i32>(p), 0);
 }
 
@@ -111,6 +118,9 @@ fn SpdReduceLoadSourceImage4(i0: vec2<u32>, i1: vec2<u32>, i2: vec2<u32>, i3: ve
 
 fn SpdReduceLoadSourceImage(base: vec2<u32>, slice: u32) -> vec4<f32>
 {
+    if (SPD_LINEAR_SAMPLER) {
+        return SpdLoadSourceImage(base, slice);
+    }
     return SpdReduceLoadSourceImage4(
         vec2<u32>(base + vec2<u32>(0u, 0u)),
         vec2<u32>(base + vec2<u32>(0u, 1u)),

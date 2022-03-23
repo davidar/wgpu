@@ -6,7 +6,7 @@ use std::{borrow::Cow, mem, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 const TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const MIP_LEVEL_COUNT: u32 = 11;
+const MIP_LEVEL_COUNT: u32 = 13;
 const MIP_PASS_COUNT: u32 = MIP_LEVEL_COUNT - 1;
 
 fn create_texels(size: usize, cx: f32, cy: f32) -> Vec<u8> {
@@ -119,8 +119,8 @@ impl Example {
             })
             .collect::<Vec<_>>();
 
-        let num_workgroups_per_dimension = 1 << (MIP_LEVEL_COUNT - 6);
-        let image_size = (1 << MIP_LEVEL_COUNT) as f32;
+        let num_workgroups_per_dimension = 1 << (MIP_PASS_COUNT - 6);
+        let image_size = (1 << MIP_PASS_COUNT) as f32;
         let inv_image_size = 1. / image_size;
 
         let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -211,14 +211,14 @@ impl Example {
                     binding: 14,
                     resource: wgpu::BindingResource::TextureView(&views[10]),
                 },
-                /*wgpu::BindGroupEntry {
+                wgpu::BindGroupEntry {
                     binding: 15,
                     resource: wgpu::BindingResource::TextureView(&views[11]),
                 },
                 wgpu::BindGroupEntry {
                     binding: 16,
                     resource: wgpu::BindingResource::TextureView(&views[12]),
-                },*/
+                },
             ],
             label: None,
         });
@@ -278,7 +278,7 @@ impl framework::Example for Example {
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         // Create the texture
-        let size = 1 << MIP_LEVEL_COUNT;
+        let size = 1 << MIP_PASS_COUNT;
         let texels = create_texels(size as usize, -0.8, 0.156);
         let texture_extent = wgpu::Extent3d {
             width: size,

@@ -82,9 +82,9 @@ fn SpdStore(p: vec2<u32>, value: vec4<f32>, mip: u32, slice: u32) {
     } else if (mip == 9u) {
         textureStore(imgDst9, vec2<i32>(p), value);
     } else if (mip == 10u) {
-        //textureStore(imgDst10, vec2<i32>(p), value);
+        textureStore(imgDst10, vec2<i32>(p), value);
     } else if (mip == 11u) {
-        //textureStore(imgDst11, vec2<i32>(p), value);
+        textureStore(imgDst11, vec2<i32>(p), value);
     }
 }
 

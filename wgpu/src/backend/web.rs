@@ -1685,13 +1685,15 @@ impl crate::Context for Context {
         )
     }
 
-    fn buffer_map_async(
+    fn buffer_map_async<F>(
         &self,
         buffer: &Self::BufferId,
         mode: crate::MapMode,
         range: Range<wgt::BufferAddress>,
-        callback: impl FnOnce(Result<(), crate::BufferAsyncError>) + Send + 'static,
-    ) {
+        callback: F,
+    ) where
+        F: FnOnce(Result<(), crate::BufferAsyncError>) + Send + 'static,
+    {
         let map_promise = buffer.0.map_async_with_f64_and_f64(
             map_map_mode(mode),
             range.start as f64,
@@ -1703,17 +1705,28 @@ impl crate::Context for Context {
         // and then take ownership of callback when invoked.
         //
         // We also only need Rc's because these will only ever be called on our thread.
-        let rc_callback = Rc::new(RefCell::new(Some(callback)));
+        let rc_callback: Rc<RefCell<Option<(_, _, F)>>> = Rc::new(RefCell::new(None));
 
-        let rc_callback_clone = rc_callback.clone();
+        let rc_callback_clone1 = rc_callback.clone();
+        let rc_callback_clone2 = rc_callback.clone();
         let closure_success = wasm_bindgen::closure::Closure::once(move |_| {
-            rc_callback.borrow_mut().take().unwrap()(Ok(()))
+            if let Some((success, rejection, callback)) = rc_callback_clone1.borrow_mut().take() {
+                callback(Ok(()));
+                drop((success, rejection));
+            }
         });
         let closure_rejected = wasm_bindgen::closure::Closure::once(move |_| {
-            rc_callback_clone.borrow_mut().take().unwrap()(Err(crate::BufferAsyncError))
+            if let Some((success, rejection, callback)) = rc_callback_clone2.borrow_mut().take() {
+                callback(Err(crate::BufferAsyncError));
+                drop((success, rejection));
+            }
         });
 
+        // Calling then before setting the value in the Rc seems like a race, but it isn't
+        // because the promise callback will run on this thread, so there is no race.
         let _ = map_promise.then2(&closure_success, &closure_rejected);
+
+        *rc_callback.borrow_mut() = Some((closure_success, closure_rejected, callback));
     }
 
     fn buffer_get_mapped_range(
